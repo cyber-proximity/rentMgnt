@@ -164,9 +164,9 @@ router.get('/crew', async (req, res) => {
         ...(search
           ? {
               OR: [
-                { name: { contains: search } },
-                { username: { contains: search } },
-                { email: { contains: search } },
+                { name: { contains: search, mode: 'insensitive' } },
+                { username: { contains: search, mode: 'insensitive' } },
+                { email: { contains: search, mode: 'insensitive' } },
               ],
             }
           : {}),
