@@ -21,21 +21,24 @@ function daysBetween(a, b) {
   return Math.ceil((b - a) / msPerDay);
 }
 
-async function hasRecentNotification(userId, type, tenantId) {
+// dedupeKey must be a substring that actually appears in `message` (e.g. the
+// tenant's name or their room label) — matching on something absent from
+// every stored message (like a raw id) would make this check always miss.
+async function hasRecentNotification(userId, type, dedupeKey) {
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const existing = await prisma.notification.findFirst({
     where: {
       userId,
       type,
-      message: { contains: tenantId },
+      message: { contains: dedupeKey },
       createdAt: { gte: since },
     },
   });
   return Boolean(existing);
 }
 
-async function createNotificationIfNew(userId, type, title, message, tenantId) {
-  if (await hasRecentNotification(userId, type, tenantId)) return false;
+async function createNotificationIfNew(userId, type, title, message, dedupeKey) {
+  if (await hasRecentNotification(userId, type, dedupeKey)) return false;
   await prisma.notification.create({ data: { userId, type, title, message } });
   return true;
 }
@@ -69,24 +72,24 @@ async function processTenantRent(tenant, now) {
   if (daysUntilDue >= 0 && daysUntilDue <= UPCOMING_DAYS) {
     const daysLabel = daysUntilDue === 0 ? 'today' : `in ${daysUntilDue} day(s)`;
     const msg = `${tenant.name} — rent of ${formatMoney(outstanding)} for ${roomLabel} is due ${daysLabel} (${dueDate.toLocaleDateString()})`;
-    if (await createNotificationIfNew(tenant.userId, 'rent_upcoming', 'Rent Due Soon', msg, tenant.id)) {
+    if (await createNotificationIfNew(tenant.userId, 'rent_upcoming', 'Rent Due Soon', msg, tenant.name)) {
       created.push('landlord_upcoming');
     }
     if (tenantUser) {
       const tenantMsg = `Your rent of ${formatMoney(outstanding)} for ${roomLabel} is due ${daysLabel} (${dueDate.toLocaleDateString()})`;
-      if (await createNotificationIfNew(tenantUser.id, 'rent_upcoming', 'Rent Due Soon', tenantMsg, tenant.id)) {
+      if (await createNotificationIfNew(tenantUser.id, 'rent_upcoming', 'Rent Due Soon', tenantMsg, roomLabel)) {
         created.push('tenant_upcoming');
       }
     }
   } else if (daysUntilDue < 0) {
     const overdueDays = Math.abs(daysUntilDue);
     const msg = `${tenant.name} owes ${formatMoney(outstanding)} for ${roomLabel} — ${overdueDays} day(s) overdue`;
-    if (await createNotificationIfNew(tenant.userId, 'rent_due', 'Rent Overdue', msg, tenant.id)) {
+    if (await createNotificationIfNew(tenant.userId, 'rent_due', 'Rent Overdue', msg, tenant.name)) {
       created.push('landlord_overdue');
     }
     if (tenantUser) {
       const tenantMsg = `Your rent of ${formatMoney(outstanding)} for ${roomLabel} is ${overdueDays} day(s) overdue. Please pay as soon as possible.`;
-      if (await createNotificationIfNew(tenantUser.id, 'rent_due', 'Rent Overdue', tenantMsg, tenant.id)) {
+      if (await createNotificationIfNew(tenantUser.id, 'rent_due', 'Rent Overdue', tenantMsg, roomLabel)) {
         created.push('tenant_overdue');
       }
     }
