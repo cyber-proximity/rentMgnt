@@ -26,6 +26,34 @@ app.use('/uploads', express.static(UPLOAD_DIR));
 
 app.get('/api/health', (_, res) => res.json({ status: 'ok' }));
 
+// Temporary diagnostic route — reveals only the DB host/name (never
+// credentials) plus a data fingerprint, to confirm which database this
+// deployed instance is actually bound to. Remove after use.
+app.get('/api/_debug/db-info', async (_req, res) => {
+  try {
+    const { PrismaClient } = require('@prisma/client');
+    const prisma = new PrismaClient();
+    let host = 'unknown';
+    try {
+      const u = new URL(process.env.DATABASE_URL || '');
+      host = u.host + u.pathname;
+    } catch {}
+    const userCount = await prisma.user.count();
+    const admin = await prisma.user.findUnique({ where: { username: 'admin' } });
+    const probe = await prisma.user.findFirst({ where: { username: { startsWith: 'probe_' } } });
+    await prisma.$disconnect();
+    res.json({
+      host,
+      userCount,
+      adminId: admin?.id || null,
+      adminUpdatedAt: admin?.updatedAt || null,
+      probeFound: !!probe,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.use('/api/auth', authRoutes);
 app.use('/api/properties', propertyRoutes);
 app.use('/api/tenants', tenantRoutes);
